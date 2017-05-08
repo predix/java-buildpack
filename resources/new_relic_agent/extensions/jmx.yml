@@ -6,7 +6,7 @@ enabled: true
 jmx:
   - object_name: spring.application:type=DataSource,name=dataSource
     metrics:
-      - attributes: NumActive, NumIdle, MaxIdle, MaxActive
+      - attributes: NumActive, NumIdle, MaxIdle, MaxActive, WaitCount, Size
         type: simple
   - object_name: java.lang:type=OperatingSystem
     metrics:
