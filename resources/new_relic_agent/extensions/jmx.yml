@@ -1,0 +1,14 @@
+name: JMXConnectionPool
+version: 1.0
+enabled: true
+#https://tomcat.apache.org/tomcat-7.0-doc/api/org/apache/tomcat/jdbc/pool/DataSource.html
+#https://tomcat.apache.org/tomcat-7.0-doc/api/org/apache/tomcat/jdbc/pool/jmx/ConnectionPoolMBean.html
+jmx:
+  - object_name: spring.application:type=DataSource,name=dataSource
+    metrics:
+      - attributes: NumActive, NumIdle, MaxIdle, MaxActive
+        type: simple
+  - object_name: java.lang:type=OperatingSystem
+    metrics:
+      - attributes: OpenFileDescriptorCount, SystemLoadAverage, ProcessCpuLoad, CommittedVirtualMemorySize, FreePhysicalMemorySize, AvailableProcessors, MaxFileDescriptorCount
+        type: simple
