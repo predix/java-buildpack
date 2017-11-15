@@ -21,6 +21,7 @@ require 'pathname'
 
 describe JavaBuildpack::BuildpackVersion do
   include_context 'application_helper'
+  include_context 'console_helper'
   include_context 'logging_helper'
 
   let(:buildpack_version) { described_class.new }
@@ -28,7 +29,7 @@ describe JavaBuildpack::BuildpackVersion do
   before do |example|
     configuration = example.metadata[:configuration] || {}
     allow(JavaBuildpack::Util::ConfigurationUtils).to receive(:load).with('version', true, true)
-      .and_return(configuration)
+                                                                    .and_return(configuration)
   end
 
   it 'creates offline version string from config/version.yml',
