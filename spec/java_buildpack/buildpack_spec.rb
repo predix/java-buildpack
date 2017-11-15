@@ -1,6 +1,5 @@
-# Encoding: utf-8
 # Cloud Foundry Java Buildpack
-# Copyright 2013-2016 the original author or authors.
+# Copyright 2013-2017 the original author or authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,17 +23,19 @@ describe JavaBuildpack::Buildpack do
   include_context 'application_helper'
   include_context 'logging_helper'
 
-  let(:stub_container1) { instance_double('StubContainer2', detect: nil, component_name: 'StubContainer1') }
+  let(:stub_container1) { instance_double('StubContainer1', detect: nil, component_name: 'StubContainer1') }
 
-  let(:stub_container2) { instance_double('StubContainer2', detect: nil, component_name: 'StubContainer2') }
+  let(:stub_container2) do
+    instance_double('StubContainer2', detect: nil, compile: nil, release: nil, component_name: 'StubContainer2')
+  end
 
   let(:stub_framework1) { instance_double('StubFramework1', detect: nil) }
 
-  let(:stub_framework2) { instance_double('StubFramework2', detect: nil) }
+  let(:stub_framework2) { instance_double('StubFramework2', detect: nil, compile: nil, release: nil) }
 
   let(:stub_jre1) { instance_double('StubJre1', detect: nil, component_name: 'StubJre1') }
 
-  let(:stub_jre2) { instance_double('StubJre2', detect: nil, component_name: 'StubJre2') }
+  let(:stub_jre2) { instance_double('StubJre2', detect: nil, compile: nil, release: nil, component_name: 'StubJre2') }
 
   let(:buildpack) do
     buildpack = nil
@@ -46,9 +47,9 @@ describe JavaBuildpack::Buildpack do
     allow(JavaBuildpack::Util::ConfigurationUtils).to receive(:load).and_call_original
     allow(JavaBuildpack::Util::ConfigurationUtils)
       .to receive(:load).with('components').and_return(
-        'containers' => ['Test::StubContainer1', 'Test::StubContainer2'],
-        'frameworks' => ['Test::StubFramework1', 'Test::StubFramework2'],
-        'jres'       => ['Test::StubJre1', 'Test::StubJre2']
+        'containers' => %w[Test::StubContainer1 Test::StubContainer2],
+        'frameworks' => %w[Test::StubFramework1 Test::StubFramework2],
+        'jres'       => %w[Test::StubJre1 Test::StubJre2]
       )
 
     allow(Test::StubContainer1).to receive(:new).and_return(stub_container1)
@@ -86,11 +87,11 @@ describe JavaBuildpack::Buildpack do
     before do
       allow(JavaBuildpack::Util::ConfigurationUtils)
         .to receive(:load).with('components')
-        .and_return(
-          'containers' => [],
-          'frameworks' => ['JavaBuildpack::Framework::JavaOpts'],
-          'jres'       => []
-        )
+                          .and_return(
+                            'containers' => [],
+                            'frameworks' => ['JavaBuildpack::Framework::JavaOpts'],
+                            'jres'       => []
+                          )
     end
 
     it 'requires files needed for components' do
@@ -104,11 +105,11 @@ describe JavaBuildpack::Buildpack do
     allow(stub_jre1).to receive(:detect).and_return('stub-jre-1')
 
     allow(stub_container1).to receive(:compile)
-    expect(stub_container2).not_to receive(:compile)
+    expect(stub_container2).not_to have_received(:compile)
     allow(stub_framework1).to receive(:compile)
-    expect(stub_framework2).not_to receive(:compile)
+    expect(stub_framework2).not_to have_received(:compile)
     allow(stub_jre1).to receive(:compile)
-    expect(stub_jre2).not_to receive(:compile)
+    expect(stub_jre2).not_to have_received(:compile)
 
     buildpack.compile
   end
@@ -119,14 +120,17 @@ describe JavaBuildpack::Buildpack do
     allow(stub_jre1).to receive(:detect).and_return('stub-jre-1')
 
     allow(stub_container1).to receive(:release).and_return('test-command')
-    expect(stub_container2).not_to receive(:release)
+    expect(stub_container2).not_to have_received(:release)
     allow(stub_framework1).to receive(:release)
-    expect(stub_framework2).not_to receive(:release)
+    expect(stub_framework2).not_to have_received(:release)
     allow(stub_jre1).to receive(:release)
-    expect(stub_jre2).not_to receive(:release)
+    expect(stub_jre2).not_to have_received(:release)
 
     expect(buildpack.release)
-      .to eq({ 'addons' => [], 'config_vars' => {}, 'default_process_types' => { 'web' => 'test-command' } }.to_yaml)
+      .to eq({ 'addons'                => [],
+               'config_vars'           => {},
+               'default_process_types' => { 'web'  => 'JAVA_OPTS="" && test-command',
+                                            'task' => 'JAVA_OPTS="" && test-command' } }.to_yaml)
   end
 
   it 'loads configuration file matching JRE class name' do

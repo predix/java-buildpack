@@ -1,6 +1,5 @@
-# Encoding: utf-8
 # Cloud Foundry Java Buildpack
-# Copyright 2013-2016 the original author or authors.
+# Copyright 2013-2017 the original author or authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -165,13 +164,13 @@ module Package
 
     def get_from_cache(configuration, index_configuration, uris)
       @cache.get(index_configuration[:uri]) do |f|
-        index         = YAML.load f
+        index         = YAML.safe_load f
         found_version = version(configuration, index)
         pin_version(configuration, found_version.to_s) if ENV['PINNED'].to_b
 
         if found_version.nil?
-          rake_output_message "Unable to resolve version '#{configuration['version']}' for platform " \
-                              "'#{index_configuration[:platform]}'"
+          raise "Unable to resolve version '#{configuration['version']}' for platform " \
+                "'#{index_configuration[:platform]}'"
         end
 
         uris << index[found_version.to_s] unless found_version.nil?

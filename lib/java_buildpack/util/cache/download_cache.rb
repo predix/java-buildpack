@@ -1,6 +1,5 @@
-# Encoding: utf-8
 # Cloud Foundry Java Buildpack
-# Copyright 2013-2016 the original author or authors.
+# Copyright 2013-2017 the original author or authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -170,7 +169,7 @@ module JavaBuildpack
 
           return unless etag
 
-          @logger.debug { "Persisting etag: #{etag}" }
+          @logger.debug { "Persisting Etag: #{etag}" }
 
           cached_file.etag(File::CREAT | File::WRONLY | File::BINARY) do |f|
             f.truncate(0)
@@ -184,7 +183,7 @@ module JavaBuildpack
 
           return unless last_modified
 
-          @logger.debug { "Persisting last-modified: #{last_modified}" }
+          @logger.debug { "Persisting Last-Modified: #{last_modified}" }
 
           cached_file.last_modified(File::CREAT | File::WRONLY | File::BINARY) do |f|
             f.truncate(0)
@@ -197,20 +196,25 @@ module JavaBuildpack
           client_authentication = JavaBuildpack::Util::ConfigurationUtils.load('cache')['client_authentication']
 
           certificate_location = client_authentication['certificate_location']
-          File.open(certificate_location) do |f|
-            http_options[:cert] = OpenSSL::X509::Certificate.new f.read
-            @logger.debug { "Adding client certificate from #{certificate_location}" }
-          end if certificate_location
+          if certificate_location
+            File.open(certificate_location) do |f|
+              http_options[:cert] = OpenSSL::X509::Certificate.new f.read
+              @logger.debug { "Adding client certificate from #{certificate_location}" }
+            end
+          end
 
           private_key_location = client_authentication['private_key_location']
+
+          return unless private_key_location
+
           File.open(private_key_location) do |f|
             http_options[:key] = OpenSSL::PKey.read f.read, client_authentication['private_key_password']
             @logger.debug { "Adding private key from #{private_key_location}" }
-          end if private_key_location
+          end
         end
 
         def compressed?(response)
-          %w(br compress deflate gzip x-gzip).include?(response['Content-Encoding'])
+          %w[br compress deflate gzip x-gzip].include?(response['Content-Encoding'])
         end
 
         def debug_ssl(http)
@@ -261,8 +265,15 @@ module JavaBuildpack
           http_options
         end
 
+        def no_proxy?(uri)
+          hosts = (ENV['no_proxy'] || ENV['NO_PROXY'] || '').split ','
+          hosts.any? { |host| uri.host.end_with? host }
+        end
+
         def proxy(uri)
-          proxy_uri = if secure?(uri)
+          proxy_uri = if no_proxy?(uri)
+                        URI.parse('')
+                      elsif secure?(uri)
                         URI.parse(ENV['https_proxy'] || ENV['HTTPS_PROXY'] || '')
                       else
                         URI.parse(ENV['http_proxy'] || ENV['HTTP_PROXY'] || '')
@@ -282,10 +293,12 @@ module JavaBuildpack
           if cached_file.etag?
             cached_file.etag(File::RDONLY | File::BINARY) { |f| request['If-None-Match'] = File.read(f) }
           end
+          @logger.debug { "Adding If-None-Match: #{request['If-None-Match']}" }
 
           if cached_file.last_modified?
             cached_file.last_modified(File::RDONLY | File::BINARY) { |f| request['If-Modified-Since'] = File.read(f) }
           end
+          @logger.debug { "Adding If-Modified-Since: #{request['If-Modified-Since']}" }
 
           @logger.debug { "Request: #{request.path}, #{request.to_hash}" }
           request
@@ -296,8 +309,10 @@ module JavaBuildpack
         end
 
         def update(uri, cached_file)
-          proxy(uri).start(uri.host, uri.port, http_options(uri)) do |http|
-            @logger.debug { "HTTP: #{http.address}, #{http.port}, #{http_options(uri)}" }
+          http_options = http_options(uri)
+
+          proxy(uri).start(uri.host, uri.port, http_options) do |http|
+            @logger.debug { "HTTP: #{http.address}, #{http.port}, #{http_options}" }
             debug_ssl(http) if secure?(uri)
 
             attempt_update(cached_file, http, uri)

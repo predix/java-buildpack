@@ -1,6 +1,5 @@
-# Encoding: utf-8
 # Cloud Foundry Java Buildpack
-# Copyright 2013-2016 the original author or authors.
+# Copyright 2013-2017 the original author or authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,25 +32,24 @@ module JavaBuildpack
 
       # (see JavaBuildpack::Component::BaseComponent#release)
       def release
-        credentials = @application.services.find_service(FILTER)['credentials']
+        credentials = @application.services.find_service(FILTER, 'url')['credentials']
         java_opts   = @droplet.java_opts
-        java_opts.add_javaagent(@droplet.sandbox + 'Agent.jar')
-        java_opts.add_system_property('com.wily.introscope.agentProfile',
-                                      @droplet.sandbox + 'core/config/IntroscopeAgent.profile')
 
-        agent_host_name java_opts
-        agent_name java_opts, credentials
-        default_process_name java_opts
-        host_name java_opts, credentials
-        port java_opts, credentials
-        ssl_socket_factory java_opts, credentials
+        java_opts
+          .add_javaagent(agent_jar)
+          .add_system_property('com.wily.introscope.agentProfile', agent_profile)
+          .add_system_property('introscope.agent.hostName', agent_host_name)
+          .add_system_property('com.wily.introscope.agent.agentName', agent_name(credentials))
+          .add_system_property('introscope.agent.defaultProcessName', default_process_name)
+
+        add_url(credentials, java_opts)
       end
 
       protected
 
       # (see JavaBuildpack::Component::VersionedDependencyComponent#supports?)
       def supports?
-        @application.services.one_service? FILTER, 'host-name'
+        @application.services.one_service? FILTER, 'url'
       end
 
       private
@@ -60,36 +58,65 @@ module JavaBuildpack
 
       private_constant :FILTER
 
-      def agent_host_name(java_opts)
-        java_opts.add_system_property('introscope.agent.hostName', @application.details['application_uris'][0])
+      def agent_host_name
+        @application.details['application_uris'][0]
       end
 
-      def agent_name(java_opts, credentials)
-        name = credentials['agent-name'] || @configuration['default_agent_name']
-        java_opts.add_system_property('com.wily.introscope.agent.agentName', name.to_s)
+      def agent_jar
+        @droplet.sandbox + 'Agent.jar'
       end
 
-      def default_process_name(java_opts)
-        java_opts.add_system_property('introscope.agent.defaultProcessName', @application.details['application_name'])
+      def add_url(credentials, java_opts)
+        agent_manager = url(credentials)
+
+        host, port, socket_factory = parse_url(agent_manager)
+        java_opts.add_system_property('agentManager.url.1', agent_manager)
+        java_opts.add_system_property('introscope.agent.enterprisemanager.transport.tcp.host.DEFAULT', host)
+        java_opts.add_system_property('introscope.agent.enterprisemanager.transport.tcp.port.DEFAULT', port)
+        java_opts.add_system_property('introscope.agent.enterprisemanager.transport.tcp.socketfactory.DEFAULT',
+                                      socket_factory)
       end
 
-      def host_name(java_opts, credentials)
-        host_name = credentials['host-name']
-        raise "'host-name' credential must be set" unless host_name
-        java_opts.add_system_property 'introscope.agent.enterprisemanager.transport.tcp.host.DEFAULT', host_name
+      # Parse the agent manager url, split first by '://', and then with ':'
+      # components is of the format [host, port, socket_factory]
+      def parse_url(url)
+        components = url.split('://')
+        components.unshift('') if components.length == 1
+        components[1] = components[1].split(':')
+        components.flatten!
+        components.push(protocol_mapping(components[0]))
+        components.shift
+        components
       end
 
-      def port(java_opts, credentials)
-        port = credentials['port']
-        java_opts.add_system_property 'introscope.agent.enterprisemanager.transport.tcp.port.DEFAULT', port if port
+      def agent_name(credentials)
+        credentials['agent-name'] || @configuration['default_agent_name']
       end
 
-      def ssl_socket_factory(java_opts, credentials)
-        ssl = credentials['ssl'].to_b
-        java_opts.add_system_property 'introscope.agent.enterprisemanager.transport.tcp.socketfactory.DEFAULT',
-                                      'com.wily.isengard.postofficehub.link.net.SSLSocketFactory' if ssl
+      def agent_profile
+        @droplet.sandbox + 'core/config/IntroscopeAgent.profile'
       end
 
+      def default_process_name
+        @application.details['application_name']
+      end
+
+      def protocol_mapping(protocol)
+        socket_factory_base = 'com.wily.isengard.postofficehub.link.net.'
+
+        protocol_socket_factory = {
+          ''      => socket_factory_base + 'DefaultSocketFactory',
+          'ssl'   => socket_factory_base + 'SSLSocketFactory',
+          'http'  => socket_factory_base + 'HttpTunnelingSocketFactory',
+          'https' => socket_factory_base + 'HttpsTunnelingSocketFactory'
+        }
+
+        protocol_socket_factory[protocol] || protocol
+      end
+
+      def url(credentials)
+        credentials['url']
+      end
     end
   end
 end

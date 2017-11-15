@@ -1,6 +1,5 @@
-# Encoding: utf-8
 # Cloud Foundry Java Buildpack
-# Copyright 2013-2016 the original author or authors.
+# Copyright 2013-2017 the original author or authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +17,7 @@ require 'spec_helper'
 require 'application_helper'
 require 'internet_availability_helper'
 require 'logging_helper'
+require 'digest'
 require 'fileutils'
 require 'java_buildpack/util/cache/download_cache'
 require 'net/http'
@@ -72,7 +72,7 @@ describe JavaBuildpack::Util::Cache::DownloadCache do
       .to_return(status: 200, body: 'foo-cached', headers: { Etag: 'foo-etag', 'Last-Modified' => 'foo-last-modified' })
 
     allow(Net::HTTP).to receive(:Proxy).and_call_original
-    expect(Net::HTTP).not_to receive(:Proxy).with('proxy', 9000, nil, nil)
+    expect(Net::HTTP).not_to have_received(:Proxy).with('proxy', 9000, nil, nil)
 
     expect { |b| download_cache.get uri, &b }.to yield_file_with_content(/foo-cached/)
     expect_complete_cache mutable_cache_root
@@ -84,7 +84,7 @@ describe JavaBuildpack::Util::Cache::DownloadCache do
       .to_return(status: 200, body: 'foo-cached', headers: { Etag: 'foo-etag', 'Last-Modified' => 'foo-last-modified' })
 
     allow(Net::HTTP).to receive(:Proxy).and_call_original
-    expect(Net::HTTP).not_to receive(:Proxy).with('proxy', 9000, nil, nil)
+    expect(Net::HTTP).not_to have_received(:Proxy).with('proxy', 9000, nil, nil)
 
     expect { |b| download_cache.get uri_credentials, &b }.to yield_file_with_content(/foo-cached/)
     expect_complete_cache mutable_cache_root
@@ -251,6 +251,38 @@ describe JavaBuildpack::Util::Cache::DownloadCache do
 
   end
 
+  context do
+    let(:environment) { { 'NO_PROXY' => '127.0.0.1,localhost,foo-uri,.foo-uri', 'HTTPS_PROXY' => 'http://proxy:9000' } }
+
+    it 'does not use proxy if host in NO_PROXY' do
+      stub_request(:get, uri_secure)
+        .to_return(status: 200, body: 'foo-cached', headers: { Etag:           'foo-etag',
+                                                               'Last-Modified' => 'foo-last-modified' })
+
+      allow(Net::HTTP).to receive(:Proxy).and_call_original
+      expect(Net::HTTP).not_to have_received(:Proxy).with('proxy', 9000, nil, nil)
+
+      download_cache.get(uri_secure) {}
+    end
+
+  end
+
+  context do
+    let(:environment) { { 'no_proxy' => '127.0.0.1,localhost,foo-uri,.foo-uri', 'https_proxy' => 'http://proxy:9000' } }
+
+    it 'does not use proxy if host in no_proxy' do
+      stub_request(:get, uri_secure)
+        .to_return(status: 200, body: 'foo-cached', headers: { Etag:           'foo-etag',
+                                                               'Last-Modified' => 'foo-last-modified' })
+
+      allow(Net::HTTP).to receive(:Proxy).and_call_original
+      expect(Net::HTTP).not_to have_received(:Proxy).with('proxy', 9000, nil, nil)
+
+      download_cache.get(uri_secure) {}
+    end
+
+  end
+
   it 'does not use ca_file if the URL is not secure and directory does not exist' do
     stub_request(:get, uri)
       .to_return(status: 200, body: 'foo-cached', headers: { Etag: 'foo-etag', 'Last-Modified' => 'foo-last-modified' })
@@ -306,7 +338,7 @@ describe JavaBuildpack::Util::Cache::DownloadCache do
   end
 
   def cache_file(root, extension)
-    root + "http%3A%2F%2Ffoo-uri%2F.#{extension}"
+    root + "#{Digest::SHA256.hexdigest('http://foo-uri/')}.#{extension}"
   end
 
   def expect_complete_cache(root)
